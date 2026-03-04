@@ -34,32 +34,32 @@
 
   let entries = [];
   let unsubscribe = null;
-  let mileageData = {}; // { 2025: 12000, 2024: 9800, ... }
-  const IRS_RATES = { 2024: 0.67, 2025: 0.70, 2026: 0.70 }; // cents per mile as dollars
+  let mileageData = {}; // { '2025-01': 1200, '2025-02': 980, ... }
+  const IRS_RATES = { 2024: 0.67, 2025: 0.70, 2026: 0.70 };
 
   window.saveMileage = async () => {
     const user = auth.currentUser; if (!user) return;
-    const yr  = parseInt(document.getElementById('yearSelect').value);
+    const yr  = document.getElementById('yearSelect').value;
+    const mo  = document.getElementById('mileageMonthSelect').value;
+    const key = `${yr}-${mo}`;
     const mi  = parseFloat(document.getElementById('mileageInput').value);
     if (isNaN(mi) || mi < 0) { showToast('⚠️ Enter a valid mileage number.'); return; }
-    mileageData[yr] = mi;
+    mileageData[key] = mi;
     try {
-      await setDoc(doc(db, 'users', user.uid, 'mileage', String(yr)), { miles: mi });
+      await setDoc(doc(db, 'users', user.uid, 'mileage', key), { miles: mi });
       showToast('✅ Mileage saved!');
-      render();
+      if (window.render) window.render();
     } catch(e) { showToast('Error saving mileage.'); console.error(e); }
   };
 
   async function loadMileage(uid) {
-    // Load all years
-    const years = [2024, 2025, 2026];
-    for (const yr of years) {
-      try {
-        const snap = await getDoc(doc(db, 'users', uid, 'mileage', String(yr)));
-        if (snap.exists()) mileageData[yr] = snap.data().miles;
-      } catch(e) { /* no data yet */ }
-    }
-    render();
+    try {
+      const snap = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+      const { getDocs, collection: col } = snap;
+      const docs = await getDocs(col(db, 'users', uid, 'mileage'));
+      docs.forEach(d => { mileageData[d.id] = d.data().miles; });
+    } catch(e) { console.error('mileage load error', e); }
+    if (window.render) window.render();
   }
 
   window._getMileageData = () => mileageData;
@@ -98,7 +98,7 @@
     const q = query(collection(db, 'users', uid, 'entries'), orderBy('date', 'desc'));
     unsubscribe = onSnapshot(q, snapshot => {
       entries = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      render();
+      if (window.render) window.render();
     }, err => { console.error(err); showToast('Error loading data.'); });
   }
 
@@ -301,7 +301,7 @@
   .csv-hint { font-size: 11px; color: var(--muted); line-height: 1.7; background: var(--surface2); padding: 10px 12px; border-radius: 6px; border-left: 3px solid var(--border); }
 
   .content { padding: 20px 24px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; }
-  .summary-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .summary-grid { display: grid; grid-template-columns: 1fr 1fr 2fr 1fr 1fr; gap: 12px; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; box-shadow: var(--shadow); }
   .card-label { font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
   .card-value { font-family: 'Lora', serif; font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }
@@ -526,14 +526,28 @@
       <div class="summary-grid">
         <div class="card income"><div class="card-icon">💰</div><div class="card-label">Total Income</div><div class="card-value" id="totalIncome">$0</div><div class="card-sub" id="incomeCount">0 entries</div></div>
         <div class="card expense"><div class="card-icon">🧾</div><div class="card-label">Total Expenses</div><div class="card-value" id="totalExpense">$0</div><div class="card-sub" id="expenseCount">0 entries</div></div>
-        <div class="card mileage">
-          <div class="card-icon" style="opacity:0.25;font-size:20px;float:right;margin-top:-2px;">🚘</div>
-          <div class="card-label">Mileage Deduction</div>
-          <div class="card-value" id="mileageDeduction">$0</div>
-          <div class="card-sub" id="mileageSub">0 miles × $0.70</div>
-          <div class="mileage-input-row">
-            <input type="number" id="mileageInput" placeholder="Total miles" min="0" step="1" inputmode="numeric">
-            <button class="btn-save-miles" onclick="saveMileage()">Save</button>
+        <div class="card mileage" style="grid-column:span 2;">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:200px;">
+              <div class="card-icon" style="opacity:0.25;font-size:20px;float:right;margin-top:-2px;">🚘</div>
+              <div class="card-label">Mileage Deduction</div>
+              <div class="card-value" id="mileageDeduction">$0</div>
+              <div class="card-sub" id="mileageSub">0 miles × $0.70</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;min-width:220px;">
+              <div style="font-size:10px;font-weight:600;color:var(--muted);letter-spacing:1px;text-transform:uppercase;">Update Monthly Miles</div>
+              <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                <select id="mileageMonthSelect" onchange="(function(){const yr=document.getElementById('yearSelect').value;const m=document.getElementById('mileageMonthSelect').value;const md=window._getMileageData?window._getMileageData():{};document.getElementById('mileageInput').value=md[yr+'-'+m]||'';})()" style="padding:6px 8px;font-size:12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:'Inter',sans-serif;outline:none;">
+                  <option value="01">January</option><option value="02">February</option><option value="03">March</option>
+                  <option value="04">April</option><option value="05">May</option><option value="06">June</option>
+                  <option value="07">July</option><option value="08">August</option><option value="09">September</option>
+                  <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+                </select>
+                <input type="number" id="mileageInput" placeholder="Miles" min="0" step="1" inputmode="numeric" style="width:90px;padding:6px 10px;font-size:12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:'Inter',sans-serif;outline:none;">
+                <button class="btn-save-miles" onclick="saveMileage()">Save</button>
+              </div>
+              <div id="mileageMonthGrid" style="display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-top:2px;"></div>
+            </div>
           </div>
         </div>
         <div class="card net"><div class="card-icon">📈</div><div class="card-label">Net Profit</div><div class="card-value" id="netProfit">$0</div><div class="card-sub">Sched. C Line 31</div></div>
@@ -681,36 +695,66 @@
 
   function fmt(n) { return '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
-  function render() {
+  window.render = function render() {
+    const yr       = getYear();
     const filtered = filterEntries();
     const income   = filtered.filter(e => e.type === 'income');
     const expense  = filtered.filter(e => e.type === 'expense');
     const totalIn  = income.reduce((s, e)  => s + e.amount, 0);
     const totalEx  = expense.reduce((s, e) => s + e.amount, 0);
 
-    // Mileage
-    const yr         = getYear();
-    const mileage    = window._getMileageData ? window._getMileageData() : {};
-    const rates      = window._getIrsRates   ? window._getIrsRates()    : {};
-    const miles      = mileage[yr] || 0;
-    const rate       = rates[yr]   || 0.70;
-    const mileageDed = miles * rate;
+    // Mileage — monthly
+    const mileage  = window._getMileageData ? window._getMileageData() : {};
+    const rates    = window._getIrsRates   ? window._getIrsRates()    : {};
+    const rate     = rates[yr] || 0.70;
+    const MONTHS   = ['01','02','03','04','05','06','07','08','09','10','11','12'];
+    const MNAMES   = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const periodMonths = activePeriod === 'q1' ? ['01','02','03']
+                       : activePeriod === 'q2' ? ['04','05','06']
+                       : activePeriod === 'q3' ? ['07','08','09']
+                       : activePeriod === 'q4' ? ['10','11','12']
+                       : activePeriod === 'month' ? [String(new Date().getMonth()+1).padStart(2,'0')]
+                       : MONTHS;
+    let totalMiles = 0;
+    periodMonths.forEach(m => { totalMiles += mileage[`${yr}-${m}`] || 0; });
+    const mileageDed = totalMiles * rate;
 
     const net = totalIn - totalEx - mileageDed;
     const se  = net > 0 ? net * 0.9235 * 0.153 : 0;
 
-    document.getElementById('totalIncome').textContent    = fmt(totalIn);
-    document.getElementById('totalExpense').textContent   = fmt(totalEx);
-    document.getElementById('mileageDeduction').textContent = fmt(mileageDed);
-    document.getElementById('mileageSub').textContent     = `${miles.toLocaleString()} miles × $${rate.toFixed(2)}`;
-    document.getElementById('mileageInput').value         = miles || '';
-    document.getElementById('netProfit').textContent      = fmt(net);
-    document.getElementById('netProfit').style.color      = net >= 0 ? 'var(--net-col)' : 'var(--danger)';
-    document.getElementById('seTax').textContent          = fmt(se);
-    document.getElementById('incomeCount').textContent    = income.length  + ' entries';
-    document.getElementById('expenseCount').textContent   = expense.length + ' entries';
+    document.getElementById('totalIncome').textContent       = fmt(totalIn);
+    document.getElementById('totalExpense').textContent      = fmt(totalEx);
+    document.getElementById('mileageDeduction').textContent  = fmt(mileageDed);
+    document.getElementById('mileageSub').textContent        = `${totalMiles.toLocaleString()} miles × $${rate.toFixed(2)}`;
+    document.getElementById('netProfit').textContent         = fmt(net);
+    document.getElementById('netProfit').style.color         = net >= 0 ? 'var(--net-col)' : 'var(--danger)';
+    document.getElementById('seTax').textContent             = fmt(se);
+    document.getElementById('incomeCount').textContent       = income.length  + ' entries';
+    document.getElementById('expenseCount').textContent      = expense.length + ' entries';
 
-    const yr = getYear();
+    // Set month input to current month's saved value
+    const curMo  = String(new Date().getMonth()+1).padStart(2,'0');
+    const selMo  = document.getElementById('mileageMonthSelect')?.value || curMo;
+    document.getElementById('mileageInput').value = mileage[`${yr}-${selMo}`] || '';
+
+    // Month grid
+    const grid = document.getElementById('mileageMonthGrid');
+    if (grid) {
+      grid.innerHTML = MONTHS.map((m, i) => {
+        const mi     = mileage[`${yr}-${m}`] || 0;
+        const active = periodMonths.includes(m);
+        return `<div title="${MNAMES[i]}: ${mi.toLocaleString()} miles"
+          style="text-align:center;padding:3px 2px;border-radius:4px;cursor:pointer;
+          background:${mi>0?'#ede9fe':'var(--surface2)'};
+          border:1px solid ${mi>0?'#c4b5fd':'var(--border)'};
+          opacity:${active?'1':'0.45'};"
+          onclick="document.getElementById('mileageMonthSelect').value='${m}';document.getElementById('mileageInput').value=${mi||''};">
+          <div style="font-size:9px;color:var(--muted);font-weight:500;">${MNAMES[i]}</div>
+          <div style="font-size:10px;font-weight:600;color:${mi>0?'#7c3aed':'var(--muted)'};">${mi>0?mi.toLocaleString():'-'}</div>
+        </div>`;
+      }).join('');
+    }
+
     const allEntries = window._getEntries ? window._getEntries() : [];
     const qGrid = document.getElementById('quarterlyGrid');
     qGrid.innerHTML = '';
