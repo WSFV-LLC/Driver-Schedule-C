@@ -134,12 +134,8 @@
     document.getElementById('editDesc').value         = e.desc;
     document.getElementById('editCategory').value     = e.category;
     document.getElementById('editAmount').value       = e.amount;
-    document.getElementById('editTypeIncome').classList.toggle('active-income',  e.type === 'income');
-    document.getElementById('editTypeExpense').classList.toggle('active-expense', e.type === 'expense');
-    document.getElementById('editTypeIncome').classList.toggle('',  e.type !== 'income');
-    document.getElementById('editTypeExpense').classList.toggle('', e.type !== 'expense');
     window._editType = e.type;
-    setEditType(e.type);
+    window.setEditType(e.type);
     document.getElementById('editModal').style.display = 'flex';
   };
 
@@ -164,7 +160,7 @@
     if (!date || !desc || !cat || isNaN(amt) || amt <= 0) { showToast('⚠️ Please fill in all fields.'); return; }
     try {
       await updateDoc(doc(db, 'users', user.uid, 'entries', id), { date, desc, category: cat, amount: amt, type });
-      closeEditModal();
+      window.closeEditModal();
       showToast('✅ Entry updated!');
     } catch (e) { showToast('Error updating entry.'); console.error(e); }
   };
